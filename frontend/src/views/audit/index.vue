@@ -72,6 +72,55 @@
       </form>
     </div>
 
+    <section class="query-panel" data-testid="audit-query-diagnostics">
+      <header class="panel-head">
+        <h3>查询失败诊断记录（跨模块只读）</h3>
+        <span class="panel-desc">数据审计复核 OLAP 查询失败诊断；列表按诊断编号去重，详情对照既有处理输入。</span>
+        <button class="btn ghost" type="button" data-testid="reload-query-diagnostics" @click="loadQueryDiagnostics()">刷新</button>
+      </header>
+      <table class="data-table">
+        <thead>
+          <tr><th>诊断编号</th><th>模板编号</th><th>失败类型</th><th>状态</th><th>重复次数</th><th>参数摘要</th><th>失败原因</th></tr>
+        </thead>
+        <tbody>
+          <tr
+            v-for="item in queryDiagnostics"
+            :key="String(item.id)"
+            :data-testid="`audit-diagnostic-row-${item.id}`"
+            :data-status="String(item.status)"
+            style="cursor:pointer"
+            @click="openQueryDiagnostic(item.id)"
+          >
+            <td>{{ item['诊断编号'] }}</td>
+            <td>{{ item['模板编号'] }}</td>
+            <td>{{ item.kind }}</td>
+            <td>{{ item.status }}</td>
+            <td>{{ item.occurrences }}</td>
+            <td>{{ item.paramSummary }}</td>
+            <td>{{ item.reason }}</td>
+          </tr>
+          <tr v-if="!queryDiagnostics.length">
+            <td colspan="7" class="empty-state">暂无查询失败诊断记录</td>
+          </tr>
+        </tbody>
+      </table>
+      <div v-if="queryDiagnosticDetail" class="query-result" data-testid="audit-diagnostic-detail">
+        <div class="result-head">
+          <strong>{{ queryDiagnosticDetail['诊断编号'] }} · {{ queryDiagnosticDetail.kind }}</strong>
+          <span class="result-meta">状态：{{ queryDiagnosticDetail.status }}</span>
+          <span class="result-meta">模板：{{ queryDiagnosticDetail['模板编号'] }}</span>
+        </div>
+        <p class="result-reason">{{ queryDiagnosticDetail.reason }}</p>
+        <dl class="diagnostic-fields">
+          <dt>参数摘要</dt><dd>{{ queryDiagnosticDetail.paramSummary }}</dd>
+          <dt>处理输入</dt><dd>{{ JSON.stringify(queryDiagnosticDetail['处理输入'] ?? {}) }}</dd>
+          <dt>已返回行</dt><dd>{{ queryDiagnosticDetail.returnedRowCount }} 行</dd>
+          <dt>核对确认</dt>
+          <dd>{{ queryDiagnosticDetail.confirmation ? `${queryDiagnosticDetail.confirmation['确认编号']} · ${queryDiagnosticDetail.confirmation['确认结论']}` : '尚未核对' }}</dd>
+        </dl>
+      </div>
+    </section>
+
     <footer class="page-foot">
       <span>共 {{ total }} 条数据审计记录</span>
       <span v-if="errorMessage" class="error-text">{{ errorMessage }}</span>
@@ -184,5 +233,45 @@ async function reload() {
   }
 }
 
-onMounted(reload)
+const queryDiagnostics = ref<any[]>([])
+const queryDiagnosticDetail = ref<any>(null)
+
+async function loadQueryDiagnostics() {
+  try {
+    const response = await request(`${ENDPOINT}/query-diagnostics`)
+    if (!response.ok) throw new Error('查询失败诊断记录读取失败')
+    const payload = await response.json()
+    queryDiagnostics.value = payload.items ?? []
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : '查询失败诊断记录读取失败'
+  }
+}
+
+async function openQueryDiagnostic(diagnosticId: number) {
+  try {
+    const response = await request(`${ENDPOINT}/query-diagnostics/${diagnosticId}`)
+    if (!response.ok) throw new Error('查询失败诊断记录读取失败')
+    queryDiagnosticDetail.value = await response.json()
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : '查询失败诊断记录读取失败'
+  }
+}
+
+onMounted(async () => {
+  await reload()
+  await loadQueryDiagnostics()
+})
 </script>
+
+<style scoped>
+.query-panel { margin-top: 16px; padding: 12px; background: #fff; border: 1px solid var(--border); border-radius: 8px; }
+.panel-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.panel-head h3 { margin: 0; font-size: 15px; }
+.panel-desc { color: var(--muted); font-size: 12px; flex: 1; }
+.query-result { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; }
+.result-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 13px; }
+.result-reason { font-size: 13px; margin: 8px 0; }
+.diagnostic-fields { display: grid; grid-template-columns: 120px 1fr; gap: 4px 8px; font-size: 13px; }
+.diagnostic-fields dt { color: var(--muted); font-size: 12px; }
+.diagnostic-fields dd { margin: 0; }
+</style>

@@ -9,6 +9,8 @@ from fastapi.responses import StreamingResponse
 
 from app.schemas import ActionPayload, ActionResult, EntryPayload, PageResult
 from app.services.audit import AuditService
+from app.services.query_builder import query_diagnostic as read_query_diagnostic
+from app.services.query_builder import query_diagnostics as read_query_diagnostics
 
 router = APIRouter(prefix="/api/audit", tags=["数据审计"])
 
@@ -25,6 +27,25 @@ def query_filters(request: Request) -> dict[str, str]:
         for key, value in request.query_params.items()
         if key in LIST_FIELDS and value.strip()
     }
+
+
+@router.get("/query-diagnostics")
+def list_query_diagnostics(
+    status: str | None = Query(default=None, description="待核对、已核对"),
+    templateId: int | None = Query(default=None),
+    kind: str | None = Query(default=None),
+) -> dict[str, object]:
+    """跨业务模块读取查询失败诊断记录：只读视图，按诊断编号去重。"""
+    items = read_query_diagnostics(status=status, template_id=templateId, kind=kind)
+    return {"items": items, "total": len(items)}
+
+
+@router.get("/query-diagnostics/{diagnostic_id}")
+def get_query_diagnostic(diagnostic_id: int) -> dict[str, object]:
+    record = read_query_diagnostic(diagnostic_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"查询失败诊断记录 {diagnostic_id} 不存在")
+    return record
 
 
 @router.get("", response_model=PageResult[dict])
